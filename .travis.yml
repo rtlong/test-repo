@@ -1,0 +1,4 @@
+---
+language: none
+install: true
+script: docker build -t app .
