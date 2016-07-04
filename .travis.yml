@@ -1,11 +1,10 @@
 ---
 language: none
-sudo: false
+sudo: required
 
 services:
   - docker
 
-# override Install phase with a simple `true` command
-install: 'true'
+install: devtools/bin/travis-ci-install
 
 script: devtools/bin/travis-ci-build

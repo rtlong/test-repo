@@ -4,4 +4,6 @@ set -euo pipefail
 
 source env.sh
 
+dev assert_deps
+
 exec dev ci:run
