@@ -8,4 +8,4 @@ services:
 # override Install phase with a simple `true` command
 install: 'true'
 
-script: docker build -t app .
+script: devtools/bin/travis-ci-build
