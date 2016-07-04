@@ -1,0 +1,148 @@
+#!/bin/bash
+
+set -e -u
+
+version_gte(){
+	local target=$2
+	local actual=$1
+	[[ $target == $actual ]] && return
+
+	local sorted=( $(printf "%b\n%b\n" $target $actual | sort -V ) )
+	local lesser=${sorted[0]}
+	local greater=${sorted[1]}
+	[[ $actual == $greater ]]
+}
+
+red(){
+	echo -ne "\x1b[31m$1\x1b[0m"
+}
+
+yellow(){
+	echo -ne "\x1b[33m$1\x1b[0m"
+}
+
+green(){
+	echo -ne "\x1b[32m$1\x1b[0m"
+}
+
+onoes() {
+	unset QUIET
+	info "$(red "FATAL: $1")"
+	exit 1
+}
+
+can_exec(){
+	silence command -v $1
+}
+
+silence() {
+	$@ >/dev/null 2>&1
+}
+
+info() {
+	[[ ${QUIET:-} ]] && return
+	echo "$@" >&2
+}
+
+warning() {
+	info "$(red "WARN: $1")"
+}
+
+missing_dep() {
+	msg="$1 not installed or not found on PATH"
+
+	[[ ${required:-1} == 1 ]] && onoes "$msg"
+
+	warning "$msg"
+	return 1
+}
+
+assert_dependency_available() {
+	local executableName="$1"
+	local minimumVersion="$2"
+	local versionCommand="${3:-"${executableName} --version | grep -Eo '[0-9]+\\.[0-9]+(\\.[0-9]+)?' | head -n 1"}"
+
+	local msg="$executableName (version >= $minimumVersion)"
+
+	info -n "$(yellow "Checking for installed") $(green "${executableName}") $(yellow "version >= ${minimumVersion}... ")"
+	can_exec "$executableName" || missing_dep "$msg" || return 0
+
+	actualVersion="$(bash -c "$versionCommand")"
+	if version_gte "$actualVersion" "$minimumVersion"; then
+		info "$(green "${actualVersion} is installed!")"
+	else
+		warning "only ${actualVersion} is installed!"
+		missing_dep "$msg" || return 0
+	fi
+}
+
+assert_gnu_coreutil_available() {
+	local executableName="$1"
+
+	bash -c "$executableName --version 2>/dev/null | grep -q GNU" || missing_dep "GNU $1"
+}
+
+is_devtool_container() {
+	[[ -n ${IS_DEVTOOL_CONTAINER:-} ]]
+}
+
+devtool_will_run_in_docker() {
+	[[ -n ${DEVTOOL_DOCKER:-} ]]
+}
+
+main() {
+	if [[ $@ =~ '-q' ]]; then
+		export QUIET=1
+	fi
+
+	# for ease in script authoring, ensure that the versions of these utilities
+	# available to the shell are those which come from GNU rather than the BSD
+	# varieties (which would be the default on OSX)
+	assert_gnu_coreutil_available sort # brew install coreutils
+	assert_gnu_coreutil_available grep # brew install homebrew/dupes/grep
+	assert_gnu_coreutil_available bash # brew install bash
+
+	# this is only needed by tasks defined by the devtool (where the above GNU utils are used in this or other low-level scripts)
+	devtool_will_run_in_docker || assert_gnu_coreutil_available tar  # brew install gnu-tar
+
+	# > brew install bash
+	assert_dependency_available 'bash' 4.3.0
+
+	# tar is used by the dev task purview:init_solr
+	# > brew install gnu-tar
+	assert_dependency_available 'tar' 1.27.1
+
+	# The docker CLI client need not necessarily be this recent, but the server must be. Ultimately, it's the client version here under test.)  Historically, docker CLI and server versions should match for best performance.
+	#
+	# Install via homebrew or "Docker Toolbox"
+	assert_dependency_available 'docker' 1.10.0
+
+	# docker-compose >= 1.6.0 is absolutle essential
+	#
+	# Install via homebrew or "Docker Toolbox"
+	assert_dependency_available 'docker-compose' 1.6.0
+
+	# direnv is not required, but recommended. if used, 2.6.1 or greater should be used to avoid a bug.
+	# > brew install direnv
+	is_devtool_container || required=0 assert_dependency_available 'direnv' 2.6.1 'direnv version'
+
+	# docker-machine is not required -- but if used, a very recent version must be used
+	#
+	# Install via homebrew or "Docker Toolbox"
+	is_devtool_container || required=0 assert_dependency_available 'docker-machine' 0.6.0
+
+	# to ensure compatibility and avoid edge cases, use a very new version of git
+	# (available as a PPA for ubuntu: "ppa:git-core/ppa")
+	# > brew install git
+	is_devtool_container || assert_dependency_available 'git' 2.7.0
+
+	# goodguide-git-hooks provide checks for whitespace errors and forgotten debugger statements as well as enforcing that all commits are tagged with a pivotal tracker story id. This is avaiable in homebrew:
+	# > brew install goodguide/tap/goodguide-git-hooks
+	is_devtool_container || required=0 assert_dependency_available 'goodguide-git-hooks' 0.0.8
+
+	# the dev tool *is* rake, and we need a recent-ish version. If you choose to run that tool inside of a container, we don't require it outside of the container.
+	# > gem install rake
+	devtool_will_run_in_docker || assert_dependency_available 'rake' 10.4.0
+}
+
+main "$@"

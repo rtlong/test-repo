@@ -1,0 +1,70 @@
+require 'devtool/helpers'
+require 'devtool/task_helpers'
+require 'devtool/shellout'
+
+# high-level project boundaries (things for which we've a directory and
+# corresponding hyphenated namespace within docker-compose.yml)
+PROJECTS = %w[
+  purview
+  entity_soup
+]
+
+desc 'Set up local checkout'
+primary_task :bootstrap => %w[
+  assert_deps
+  git:init_submodules
+]
+
+desc 'Check if you have all dev dependencies'
+primary_task :assert_deps do |task|
+  opts = []
+  opts << '-q' unless task_run_exclusively(task)
+  run! root_path.join('devtools/bin/assert_deps').to_s, *opts
+end
+
+desc 'Pull latest versions of all pullable docker images'
+task :pull_images => %w[ bootstrap ] do
+  run! 'docker-compose', 'pull', *pullable_services
+end
+
+desc 'Build all docker images for all projects'
+task :build => %w[ bootstrap ] do
+  run! 'docker-compose', 'build', '--pull'
+end
+
+desc 'pull_images + build_images'
+primary_task :update_images => %w[ pull_images build ]
+
+desc 'Kill all containers'
+primary_task :kill => %w[ bootstrap ] do
+  run! 'docker-compose', 'kill'
+end
+
+desc 'Kill and delete all containers, volumes, and networks'
+primary_task :down => %w[ bootstrap ] do
+  # `docker-compose down` has a tendency to fail when it can't delete the
+  # network or a volume; using run without bang here to avoid printing loud
+  # errors in that case
+  run 'docker-compose', 'down', '--volumes'
+end
+
+# print primary tasks in help-like format when no tasks given
+task :default do
+  exec $0, *ARGV, '-D', "^(#{Regexp.union(primary_tasks.map(&:name))})$"
+end
+
+task :pry do
+  require 'pry'
+  binding.pry
+end
+
+task :assert_git_tree_is_clean => %w[ assert_deps ] do
+  next if ENV['DIRTY_TREE_OK'].present?
+  run(*%w[ git diff --quiet ]) or abort 'FATAL: Tree is dirty.'
+end
+
+desc 'git-clean the tree to prepare for a build'
+task :clean_tree => %w[ assert_git_tree_is_clean ] do
+  next if ENV['SKIP_GIT_CLEAN'].present?
+  run!(*%w[ git clean -fdx public/ log/ tmp/ ])
+end

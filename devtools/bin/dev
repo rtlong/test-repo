@@ -1,0 +1,31 @@
+#!/bin/bash
+
+set -eu
+
+root_dir="$(cd $(dirname $0) && git rev-parse --show-toplevel)"
+
+cmd=( rake
+	-E "Rake.application.instance_variable_set(:@name, 'dev')"
+	--libdir "${root_dir}/devtools/rakelib"
+	--rakelibdir "${root_dir}/devtools/rakelib"
+	--rakefile "${root_dir}/devtools/Rakefile"
+	"$@"
+)
+
+if [[ ${DEVTOOL_DOCKER:-} ]]; then
+	dockerargs=(
+		--rm
+		--env-file "${root_dir}/devtools/devtool_container/docker-env"
+		-v /var/run/docker.sock:/var/run/docker.sock
+		-v "${root_dir}:${root_dir}"
+		-w "${root_dir}"
+	)
+
+	[[ ${CI:-} ]] || dockerargs+=( -i -t )
+
+	image="${DEVTOOL_IMAGE:-"${DEVTOOL_IMAGE_REPO}:${DEVTOOL_IMAGE_TAG}"}"
+
+	exec docker run "${dockerargs[@]}" "$image" "${cmd[@]}"
+fi
+
+exec "${cmd[@]}"

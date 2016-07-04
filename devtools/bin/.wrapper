@@ -1,0 +1,14 @@
+#!/bin/bash
+
+commandName=$(basename $0)
+
+if command which g$commandName > /dev/null 2>&1; then
+	exec g$commandName "$@"
+else
+	# find the first $commandName in those available via which -a which isn't $0
+	execs=( $(command which -a $commandName) )
+	for cmd in "${execs[@]}"; do
+		[[ $cmd == $0 ]] && continue
+		exec $cmd "$@"
+	done
+fi
