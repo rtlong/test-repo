@@ -1,4 +1,10 @@
 ---
 language: none
-install: true
+
+services:
+  - docker
+
+# override Install phase with a simple `true` command
+install: 'true'
+
 script: docker build -t app .
